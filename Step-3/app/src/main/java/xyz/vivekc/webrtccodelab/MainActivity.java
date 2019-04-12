@@ -28,9 +28,11 @@ import org.webrtc.MediaStream;
 import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
 import org.webrtc.SessionDescription;
+import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.SurfaceViewRenderer;
 import org.webrtc.VideoCapturer;
-import org.webrtc.VideoRenderer;
+import org.webrtc.VideoFrame;
+import org.webrtc.VideoSink;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
@@ -54,6 +56,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     SurfaceViewRenderer localVideoView;
     SurfaceViewRenderer remoteVideoView;
+
+    ProxyVideoSink localProxyVideoSink;
+    ProxyVideoSink remoteProxyVideoSink;
 
     Button hangup;
     PeerConnection localPeer;
@@ -135,19 +140,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     public void start() {
         //Initialize PeerConnectionFactory globals.
-        PeerConnectionFactory.InitializationOptions initializationOptions =
-                PeerConnectionFactory.InitializationOptions.builder(this)
-                        .setEnableVideoHwAcceleration(true)
-                        .createInitializationOptions();
-        PeerConnectionFactory.initialize(initializationOptions);
+        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions());
 
-        //Create a new PeerConnectionFactory instance - using Hardware encoder and decoder.
-        PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
+
+
+//        EglBase rootEglBase = EglBase.create();
+
         DefaultVideoEncoderFactory defaultVideoEncoderFactory = new DefaultVideoEncoderFactory(
                 rootEglBase.getEglBaseContext(),  /* enableIntelVp8Encoder */true,  /* enableH264HighProfile */true);
         DefaultVideoDecoderFactory defaultVideoDecoderFactory = new DefaultVideoDecoderFactory(rootEglBase.getEglBaseContext());
-        peerConnectionFactory = new PeerConnectionFactory(options, defaultVideoEncoderFactory, defaultVideoDecoderFactory);
 
+
+        //Create a new PeerConnectionFactory instance.
+        peerConnectionFactory = PeerConnectionFactory.builder()
+                .setVideoEncoderFactory(defaultVideoEncoderFactory)
+                .setVideoDecoderFactory(defaultVideoDecoderFactory)
+                .createPeerConnectionFactory();
 
         //Now create a VideoCapturer instance.
         VideoCapturer videoCapturerAndroid;
@@ -160,7 +168,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         //Create a VideoSource instance
         if (videoCapturerAndroid != null) {
-            videoSource = peerConnectionFactory.createVideoSource(videoCapturerAndroid);
+            SurfaceTextureHelper surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", rootEglBase.getEglBaseContext());
+            videoSource = peerConnectionFactory.createVideoSource(videoCapturerAndroid.isScreencast());
+            videoCapturerAndroid.initialize(surfaceTextureHelper, getApplicationContext(), videoSource.getCapturerObserver());
         }
         localVideoTrack = peerConnectionFactory.createVideoTrack("100", videoSource);
 
@@ -175,6 +185,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         localVideoView.setVisibility(View.VISIBLE);
         // And finally, with our VideoRenderer ready, we
         // can add our renderer to the VideoTrack.
+        localProxyVideoSink = new ProxyVideoSink();
+        localVideoTrack.addSink(localProxyVideoSink);
         localVideoTrack.addSink(localVideoView);
 
         localVideoView.setMirror(true);
@@ -186,6 +198,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+
+    private static class ProxyVideoSink implements VideoSink {
+        private VideoSink target;
+        @Override synchronized public void onFrame(VideoFrame frame) {
+            if (target == null) {
+                Log.d(TAG, "Dropping frame in proxy because target is null."); return;
+            }
+            target.onFrame(frame);
+        }
+        synchronized void setTarget(VideoSink target) {
+            this.target = target;
+        }
+    }
 
     /**
      * This method will be called directly by the app when it is the initiator and has got the local media
@@ -277,8 +302,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         final VideoTrack videoTrack = stream.videoTracks.get(0);
         runOnUiThread(() -> {
             try {
-                remoteVideoView.setVisibility(View.VISIBLE);
+                remoteProxyVideoSink = new ProxyVideoSink();
                 videoTrack.addSink(remoteVideoView);
+                videoTrack.addSink(remoteProxyVideoSink);
+
+                remoteVideoView.setVisibility(View.VISIBLE);
             } catch (Exception e) {
                 e.printStackTrace();
             }
