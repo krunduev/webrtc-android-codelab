@@ -98,7 +98,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //get Ice servers using xirsys
         byte[] data = new byte[0];
         try {
-            data = ("<xirsys_ident>:<xirsys_secret>").getBytes("UTF-8");
+            data = ("curiousit:d11fa4ae-5d14-11e9-b62b-0242ac110003").getBytes("UTF-8");
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
