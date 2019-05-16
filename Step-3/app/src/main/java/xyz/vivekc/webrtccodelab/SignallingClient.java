@@ -58,7 +58,7 @@ class SignallingClient {
         }
         if (instance.roomName == null) {
             //set the room name here
-            instance.roomName = "9876";
+            instance.roomName = "2";
         }
         return instance;
     }
@@ -72,7 +72,8 @@ class SignallingClient {
             IO.setDefaultHostnameVerifier((hostname, session) -> true);
             IO.setDefaultSSLContext(sslcontext);
             //set the socket.io url here
-            socket = IO.socket("https://192.168.0.100:8080");
+//            socket = IO.socket("https://192.168.0.101:8080");
+            socket = IO.socket("https://rtc.curiousit.eu/");
             socket.connect();
             Log.d("SignallingClient", "init() called");
 
@@ -89,7 +90,9 @@ class SignallingClient {
             });
 
             //room is full event
-            socket.on("full", args -> Log.d("SignallingClient", "full call() called with: args = [" + Arrays.toString(args) + "]"));
+            socket.on("full", args -> {
+                Log.d("SignallingClient", "full call() called with: args = [" + Arrays.toString(args) + "]");
+            });
 
             //peer joined event
             socket.on("join", args -> {
@@ -106,10 +109,14 @@ class SignallingClient {
             });
 
             //log event
-            socket.on("log", args -> Log.d("SignallingClient", "log call() called with: args = [" + Arrays.toString(args) + "]"));
+            socket.on("log", args -> {
+                Log.d("SignallingClient", "log call() called with: args = [" + Arrays.toString(args) + "]");
+            });
 
             //bye event
-            socket.on("bye", args -> callback.onRemoteHangUp((String) args[0]));
+            socket.on("bye", args -> {
+                callback.onRemoteHangUp((String) args[0]);
+            });
 
             //messages - SDP and ICE candidates are transferred through this
             socket.on("message", args -> {
