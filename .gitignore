@@ -1,7 +1,12 @@
+#Node Js Librries
+signalling/node_module/
+
 # Built application files
 *.apk
 *.ap_
 Step-1/.idea/
+Step-2/.idea/
+Step-3/.idea/
 # Files for the ART/Dalvik VM
 *.dex
 

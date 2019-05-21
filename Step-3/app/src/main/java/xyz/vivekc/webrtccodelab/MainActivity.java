@@ -1,6 +1,9 @@
 package xyz.vivekc.webrtccodelab;
 
+import android.content.Context;
+import android.media.AudioManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Base64;
@@ -36,6 +39,7 @@ import org.webrtc.VideoSink;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,12 +57,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     VideoTrack localVideoTrack;
     AudioSource audioSource;
     AudioTrack localAudioTrack;
+    AudioManager audioManager;
+
 
     SurfaceViewRenderer localVideoView;
     SurfaceViewRenderer remoteVideoView;
 
     ProxyVideoSink localProxyVideoSink;
     ProxyVideoSink remoteProxyVideoSink;
+
+    VideoFileRenderer videoFileRenderer;
 
     Button hangup;
     PeerConnection localPeer;
@@ -75,6 +83,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        audioManager = (AudioManager)getSystemService(Context.AUDIO_SERVICE);
+
         initViews();
         initVideos();
         getIceServers();
@@ -86,6 +96,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private void initViews() {
         hangup = findViewById(R.id.end_call);
+        hangup.setActivated(true);
         localVideoView = findViewById(R.id.local_gl_surface_view);
         remoteVideoView = findViewById(R.id.remote_gl_surface_view);
         hangup.setOnClickListener(this);
@@ -143,7 +154,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions());
 
 
-
 //        EglBase rootEglBase = EglBase.create();
 
         DefaultVideoEncoderFactory defaultVideoEncoderFactory = new DefaultVideoEncoderFactory(
@@ -196,6 +206,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (SignallingClient.getInstance().isInitiator) {
             onTryToStart();
         }
+
     }
 
 
@@ -300,11 +311,34 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void gotRemoteStream(MediaStream stream) {
         //we have remote video stream. add to the renderer.
         final VideoTrack videoTrack = stream.videoTracks.get(0);
+        final AudioTrack audioTrack = stream.audioTracks.get(0);
         runOnUiThread(() -> {
             try {
+                audioTrack.setEnabled(true);
+                audioTrack.setVolume(10.0);
+
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                audioManager.setSpeakerphoneOn(false);
+
                 remoteProxyVideoSink = new ProxyVideoSink();
                 videoTrack.addSink(remoteVideoView);
                 videoTrack.addSink(remoteProxyVideoSink);
+
+                String dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getPath();
+                //Environment.getDataDirectory().getPath();
+                String saveRemoteVideoToFile =  dir + "/a2.mp4";
+                // When saveRemoteVideoToFile is set we save the video from the remote to a file.
+
+                try {
+                    videoFileRenderer = new VideoFileRenderer(saveRemoteVideoToFile, rootEglBase.getEglBaseContext(), false);
+
+                    //new VideoFileRenderer(
+                            //saveRemoteVideoToFile, videoOutWidth, videoOutHeight, rootEglBase.getEglBaseContext());
+                    videoTrack.addSink(videoFileRenderer);
+                } catch (IOException e) {
+                    throw new RuntimeException(
+                            "Failed to open video file for output: " + saveRemoteVideoToFile, e);
+                }
 
                 remoteVideoView.setVisibility(View.VISIBLE);
             } catch (Exception e) {
@@ -447,6 +481,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private void hangup() {
         try {
+            if (videoFileRenderer != null) {
+                videoFileRenderer.release();
+                videoFileRenderer = null;
+            }
+
             localPeer.close();
             localPeer = null;
             SignallingClient.getInstance().close();
